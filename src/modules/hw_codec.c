@@ -338,9 +338,17 @@ int hw_codec_default_conf_enable(void)
 // #endif /* ((CONFIG_AUDIO_DEV == GATEWAY) && (CONFIG_AUDIO_SOURCE_I2S)) */
 
 
+// //for MIC as source 
+// #if ((CONFIG_AUDIO_DEV == GATEWAY) && (CONFIG_AUDIO_SOURCE_I2S))
+// ret = cs47l63_comm_reg_conf_write(line_in_enable, ARRAY_SIZE(line_in_enable));
+// if (ret) {
+// return ret;
+// }
+// #endif /* ((CONFIG_AUDIO_DEV == GATEWAY) && (CONFIG_AUDIO_SOURCE_I2S)) */
+
+
 #if ((CONFIG_AUDIO_DEV == GATEWAY) && (CONFIG_AUDIO_SOURCE_I2S))
-ret = cs47l63_comm_reg_conf_write(pdm_mic_enable_configure,
-    ARRAY_SIZE(pdm_mic_enable_configure));
+ret = cs47l63_comm_reg_conf_write(pdm_mic_enable_configure, ARRAY_SIZE(pdm_mic_enable_configure));
 if (ret) {
 return ret;
 }

@@ -129,7 +129,7 @@ static void encoder_thread(void *arg1, void *arg2, void *arg3)
 		 * blocks, we need to fetch the pointers to all of these
 		 * blocks before copying it to a continuous area of memory
 		 * before sending it to the encoder
-		 
+		*/ 
 		for (int i = 0; i < CONFIG_FIFO_FRAME_SPLIT_NUM; i++) {
 			ret = data_fifo_pointer_last_filled_get(&fifo_rx, &tmp_pcm_raw_data[i],
 								&pcm_block_size, K_FOREVER);
@@ -138,9 +138,10 @@ static void encoder_thread(void *arg1, void *arg2, void *arg3)
 			       pcm_block_size);
 
 			data_fifo_block_free(&fifo_rx, tmp_pcm_raw_data[i]);
-		}*/
+		}
 
 		//custom
+		/*
 		char usb_pcm_data[FRAME_SIZE_BYTES];  // Stores USB PCM
         char i2s_pcm_data[FRAME_SIZE_BYTES];  // Stores I2S PCM
 
@@ -164,6 +165,7 @@ static void encoder_thread(void *arg1, void *arg2, void *arg3)
 		}
 
 		data_fifo_block_free(&fifo_rx, tmp_pcm_raw_data[i]);
+		*/
 
 
 
@@ -208,7 +210,7 @@ static void encoder_thread(void *arg1, void *arg2, void *arg3)
 		STACK_USAGE_PRINT("encoder_thread", &encoder_thread_data);
 	}
 }
-}
+
 
 void audio_system_encoder_start(void)
 {

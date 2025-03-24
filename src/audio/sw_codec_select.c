@@ -110,28 +110,28 @@ int sw_codec_encode(void *pcm_data, size_t pcm_size, uint8_t **encoded_data, siz
 
 		/* Since LC3 is a single channel codec, we must split the
 		 * stereo PCM stream
-		 
+		*/ 
 		ret = pscm_two_channel_split(pcm_data, pcm_size, CONFIG_AUDIO_BIT_DEPTH_BITS,
 					     pcm_data_mono_system_sample_rate[AUDIO_CH_L],
 					     pcm_data_mono_system_sample_rate[AUDIO_CH_R],
 					     &pcm_block_size_mono_system_sample_rate);
 		if (ret) {
 			return ret;
-		}*/
-
-         //custom
-
-		 if (!usb_pcm_data || !i2s_pcm_data) {
-			LOG_ERR("USB or I2S PCM data buffer is NULL!");
-			return -EINVAL;
 		}
 
-        size_t min_size = MIN(usb_pcm_size, i2s_pcm_size);
-	    memcpy(pcm_data_mono_system_sample_rate[AUDIO_CH_L], usb_pcm_data, FRAME_SIZE_BYTES);
-        memcpy(pcm_data_mono_system_sample_rate[AUDIO_CH_R], i2s_pcm_data, FRAME_SIZE_BYTES);
-		LOG_INF("USB PCM assigned to Left | I2S PCM assigned to Right | Size: %d", pcm_block_size_mono_system_sample_rate);
+        //  //custom
 
-        pcm_block_size_mono_system_sample_rate = FRAME_SIZE_BYTES;
+		//  if (!usb_pcm_data || !i2s_pcm_data) {
+		// 	LOG_ERR("USB or I2S PCM data buffer is NULL!");
+		// 	return -EINVAL;
+		// }
+
+        // size_t min_size = MIN(usb_pcm_size, i2s_pcm_size);
+	    // memcpy(pcm_data_mono_system_sample_rate[AUDIO_CH_L], usb_pcm_data, FRAME_SIZE_BYTES);
+        // memcpy(pcm_data_mono_system_sample_rate[AUDIO_CH_R], i2s_pcm_data, FRAME_SIZE_BYTES);
+		// LOG_INF("USB PCM assigned to Left | I2S PCM assigned to Right | Size: %d", pcm_block_size_mono_system_sample_rate);
+
+        // pcm_block_size_mono_system_sample_rate = FRAME_SIZE_BYTES;
 
 		for (int i = 0; i < m_config.encoder.channel_mode; ++i) {
 			ret = sw_codec_sample_rate_convert(
