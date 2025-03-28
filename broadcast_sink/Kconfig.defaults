@@ -55,13 +55,13 @@ config BT_BAP_SCAN_DELEGATOR
 	default y
 
 config BT_BAP_BROADCAST_SNK_STREAM_COUNT
-	default 2
+	default 4
 
 config BT_BAP_BROADCAST_SNK_COUNT
 	default 2
 
 config BT_ISO_MAX_CHAN
-	default 2
+	default 4
 
 config BT_ISO_MAX_BIG
 	default 2

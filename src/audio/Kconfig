@@ -357,24 +357,24 @@ config ENCODER_STACK_SIZE
 
 config AUDIO_DATAPATH_STACK_SIZE
 	int "Stack size for audio datapath thread"
-	default 7600 if AUDIO_BIT_DEPTH_16
+	default 14700 if AUDIO_BIT_DEPTH_16
 	default 14700 if AUDIO_BIT_DEPTH_32
 
 config BUTTON_MSG_SUB_STACK_SIZE
 	int "Stack size for button subscriber"
-	default 2048
+	default 4096
 
 config LE_AUDIO_MSG_SUB_STACK_SIZE
 	int "Stack size for LE Audio subscriber"
-	default 2048
+	default 4096
 
 config BT_MGMT_MSG_SUB_STACK_SIZE
 	int "Stack size for bt_mgmt subscriber"
-	default 2048
+	default 4096
 
 config CONTENT_CONTROL_MSG_SUB_STACK_SIZE
 	int "Stack size for content control subscriber"
-	default 1024
+	default 2048
 
 endmenu # Stack sizes
 

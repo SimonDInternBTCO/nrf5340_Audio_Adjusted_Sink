@@ -14,7 +14,7 @@
 #include "audio_sync_timer.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(le_audio_rx, CONFIG_LE_AUDIO_RX_LOG_LEVEL);
+LOG_MODULE_REGISTER(le_audio_rx, 4);
 
 struct ble_iso_data {
 	uint8_t data[CONFIG_BT_ISO_RX_MTU];

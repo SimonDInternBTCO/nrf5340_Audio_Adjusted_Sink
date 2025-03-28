@@ -20,7 +20,9 @@
 #include "zbus_common.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(bt_mgmt_scan);
+
+//LOG_MODULE_DECLARE(bt_mgmt_scan);
+LOG_MODULE_REGISTER(bt_mgmt_scan_for_broadcast, LOG_LEVEL_DBG);
 
 /* Any value above 0xFFFFFF is invalid, so one can use 0xFFFFFFFF to denote
  * an invalid broadcast ID.

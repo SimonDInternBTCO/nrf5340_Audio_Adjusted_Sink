@@ -1,5 +1,13 @@
 {
     "files.associations": {
-        "channel_assignment.h": "c"
+        "channel_assignment.h": "c",
+        "log.h": "c",
+        "bap_endpoint.h": "c",
+        "macros_common.h": "c",
+        "button_assignments.h": "c",
+        "broadcast_sink.h": "c",
+        "bt_mgmt_scan_for_broadcast_internal.h": "c",
+        "zbus.h": "c",
+        "bt_mgmt_scan_for_conn_internal.h": "c"
     }
 }

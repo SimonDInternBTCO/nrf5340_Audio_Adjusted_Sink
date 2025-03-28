@@ -16,7 +16,7 @@
 #endif /* (CONFIG_SW_CODEC_LC3) */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(sw_codec_select, CONFIG_SW_CODEC_SELECT_LOG_LEVEL);
+LOG_MODULE_REGISTER(sw_codec_select, 4);
 
 static struct sw_codec_config m_config;
 

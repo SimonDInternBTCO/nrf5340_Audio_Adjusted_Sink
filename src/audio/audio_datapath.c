@@ -31,7 +31,7 @@ LOG_MODULE_REGISTER(audio_datapath, CONFIG_AUDIO_DATAPATH_LOG_LEVEL);
 
 /*
  * Terminology
- *   - sample: signed integer of audio waveform amplitude
+ *   - sample: signed integer of audio waveform amplitudes
  *   - sample FIFO: circular array of raw audio samples
  *   - block: set of raw audio samples exchanged with I2S
  *   - frame: encoded audio packet exchanged with connectivity

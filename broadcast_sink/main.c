@@ -23,7 +23,7 @@
 #include "fw_info_app.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(main, CONFIG_MAIN_LOG_LEVEL);
+LOG_MODULE_REGISTER(main, 4);
 
 struct ble_iso_data {
 	uint8_t data[CONFIG_BT_ISO_RX_MTU];
