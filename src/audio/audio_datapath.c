@@ -27,7 +27,7 @@
 #include "sd_card_playback.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(audio_datapath, CONFIG_AUDIO_DATAPATH_LOG_LEVEL);
+LOG_MODULE_REGISTER(audio_datapath, 4);
 
 /*
  * Terminology

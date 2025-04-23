@@ -94,6 +94,7 @@ static void button_msg_sub_thread(void)
 		}
 
 		switch (msg.button_pin) {
+
 		case BUTTON_PLAY_PAUSE:
 			if (strm_state == STATE_STREAMING) {
 				ret = broadcast_sink_stop();
@@ -108,6 +109,20 @@ static void button_msg_sub_thread(void)
 			} else {
 				LOG_WRN("In invalid state: %d", strm_state);
 			}
+			
+		// 	/* Manually enter the broadcast code using the value from CONFIG */
+	    //     const char *code_str = CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY;
+	    //     uint8_t code[BT_ISO_BROADCAST_CODE_SIZE] = {0};
+
+	    //     /* Copy string into buffer, trimming if too long */
+	    //    memcpy(code, code_str, MIN(strlen(code_str), sizeof(code)));
+
+	    //    ret = broadcast_sink_broadcast_code_set(code);
+	    //    if (ret) {
+		//    LOG_ERR("Failed to set broadcast code: %d", ret);
+	    //    } else {
+		//    LOG_INF("Broadcast code manually set via play/pause button");
+	    //    }
 
 			break;
 

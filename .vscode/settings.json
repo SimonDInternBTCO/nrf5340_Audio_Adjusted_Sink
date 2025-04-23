@@ -8,6 +8,17 @@
         "broadcast_sink.h": "c",
         "bt_mgmt_scan_for_broadcast_internal.h": "c",
         "zbus.h": "c",
-        "bt_mgmt_scan_for_conn_internal.h": "c"
+        "bt_mgmt_scan_for_conn_internal.h": "c",
+        "bap.h": "c",
+        "uuid.h": "c",
+        "le_audio.h": "c",
+        "kernel.h": "c",
+        "bt_rendering_and_capture.h": "c",
+        "bt_mgmt.h": "c",
+        "audio_defines.h": "c",
+        "pcm_stream_channel_modifier.h": "c",
+        "sample_rate_converter.h": "c",
+        "sw_codec_select.h": "c",
+        "sw_codec_lc3.h": "c"
     }
 }

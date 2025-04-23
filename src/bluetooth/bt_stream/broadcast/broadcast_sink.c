@@ -23,7 +23,7 @@
 #include "channel_assignment.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(broadcast_sink, CONFIG_BROADCAST_SINK_LOG_LEVEL);
+LOG_MODULE_REGISTER(broadcast_sink, 4);
 
 
 // BUILD_ASSERT(CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT <= 4,
@@ -536,6 +536,17 @@ static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_
 		memcpy(bis_encryption_key, CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
 		       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
 			   ARRAY_SIZE(bis_encryption_key)));
+	// /* Check if the code is set, otherwise wait for button press */
+	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
+	// 	if (broadcast_code_received) {
+	// 		memcpy(bis_encryption_key, CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
+	// 		       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
+	// 			   ARRAY_SIZE(bis_encryption_key)));
+	// 	} else {
+	// 		LOG_WRN("Waiting for broadcast code to be set");
+	// 		return;  // Wait until the code is received
+	// 	}
+
 	} else {
 		/* If the biginfo shows the stream is encrypted, then wait until broadcast code is
 		 * received then start to sync. If headset is out of sync but still looking for same
