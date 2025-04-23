@@ -61,6 +61,9 @@ K_THREAD_STACK_DEFINE(bt_mgmt_msg_sub_thread_stack, CONFIG_BT_MGMT_MSG_SUB_STACK
 
 static enum stream_state strm_state = STATE_PAUSED;
 
+static bool broadcast_code_received = false;
+
+
 /* Function for handling all stream state changes */
 static void stream_state_set(enum stream_state stream_state_new)
 {
@@ -96,35 +99,56 @@ static void button_msg_sub_thread(void)
 		switch (msg.button_pin) {
 
 		case BUTTON_PLAY_PAUSE:
-			if (strm_state == STATE_STREAMING) {
-				ret = broadcast_sink_stop();
-				if (ret) {
-					LOG_WRN("Failed to stop broadcast sink: %d", ret);
-				}
-			} else if (strm_state == STATE_PAUSED) {
-				ret = broadcast_sink_start();
-				if (ret) {
-					LOG_WRN("Failed to start broadcast sink: %d", ret);
+			if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
+				/* Manually enter the broadcast code */
+				const char *code_str = CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY;
+				uint8_t code[BT_ISO_BROADCAST_CODE_SIZE] = {0};
+				memcpy(code, code_str, MIN(strlen(code_str), sizeof(code)));
+		
+				int ret = broadcast_sink_broadcast_code_set(code);
+				if (!ret) {
+					broadcast_code_received = true;
+					LOG_INF("Broadcast code set via button");
+		
+					/* Retry starting the sink if we were paused waiting on code */
+					if (strm_state == STATE_PAUSED) {
+						ret = broadcast_sink_start();
+						if (ret) {
+							LOG_WRN("Sink retry start failed: %d", ret);
+						}
+					}
+				} else {
+					LOG_ERR("Code set failed: %d", ret);
 				}
 			} else {
-				LOG_WRN("In invalid state: %d", strm_state);
+				/* Unencrypted: toggle play/pause as before */
+				int ret;
+				if (strm_state == STATE_STREAMING) {
+					ret = broadcast_sink_stop();
+				} else {
+					ret = broadcast_sink_start();
+				}
+				if (ret) {
+					LOG_WRN("Play/pause toggle failed: %d", ret);
+				}
 			}
-			
-		// 	/* Manually enter the broadcast code using the value from CONFIG */
-	    //     const char *code_str = CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY;
-	    //     uint8_t code[BT_ISO_BROADCAST_CODE_SIZE] = {0};
+			break;	
 
-	    //     /* Copy string into buffer, trimming if too long */
-	    //    memcpy(code, code_str, MIN(strlen(code_str), sizeof(code)));
-
-	    //    ret = broadcast_sink_broadcast_code_set(code);
-	    //    if (ret) {
-		//    LOG_ERR("Failed to set broadcast code: %d", ret);
-	    //    } else {
-		//    LOG_INF("Broadcast code manually set via play/pause button");
-	    //    }
-
-			break;
+		// case BUTTON_PLAY_PAUSE:
+		// 	if (strm_state == STATE_STREAMING) {
+		// 		ret = broadcast_sink_stop();
+		// 		if (ret) {
+		// 			LOG_WRN("Failed to stop broadcast sink: %d", ret);
+		// 		}
+		// 	} else if (strm_state == STATE_PAUSED) {
+		// 		ret = broadcast_sink_start();
+		// 		if (ret) {
+		// 			LOG_WRN("Failed to start broadcast sink: %d", ret);
+		// 		}
+		// 	} else {
+		// 		LOG_WRN("In invalid state: %d", strm_state);
+		// 	}
+		// 	break;
 
 		case BUTTON_VOLUME_UP:
 			ret = bt_r_and_c_volume_up();

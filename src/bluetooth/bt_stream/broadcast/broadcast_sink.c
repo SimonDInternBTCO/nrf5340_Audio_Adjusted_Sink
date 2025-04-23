@@ -32,6 +32,7 @@ LOG_MODULE_REGISTER(broadcast_sink, 4);
 ZBUS_CHAN_DEFINE(le_audio_chan, struct le_audio_msg, NULL, NULL, ZBUS_OBSERVERS_EMPTY,
 		 ZBUS_MSG_INIT(0));
 
+static bool broadcast_code_received = false;
 static uint8_t bis_encryption_key[BT_ISO_BROADCAST_CODE_SIZE] = {0};
 static bool broadcast_code_received;
 struct audio_codec_info {
@@ -532,10 +533,21 @@ static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_
 	/* NOTE: The string below is used by the Nordic CI system */
 	LOG_INF("Syncing to broadcast stream index %d", active_stream_index);
 
-	if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
-		memcpy(bis_encryption_key, CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
-		       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
-			   ARRAY_SIZE(bis_encryption_key)));
+	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
+	// 	if (!broadcast_code_received) {
+	// 		LOG_WRN("Encrypted: waiting for broadcast code (button press)");
+	// 		return;
+	// 	}
+
+	// 	memcpy(bis_encryption_key,
+	// 	       CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
+	// 	       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
+	// 	           ARRAY_SIZE(bis_encryption_key)));
+
+	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
+	// 	memcpy(bis_encryption_key, CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
+	// 	       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
+	// 		   ARRAY_SIZE(bis_encryption_key)));
 	// /* Check if the code is set, otherwise wait for button press */
 	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
 	// 	if (broadcast_code_received) {
@@ -546,20 +558,36 @@ static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_
 	// 		LOG_WRN("Waiting for broadcast code to be set");
 	// 		return;  // Wait until the code is received
 	// 	}
-
-	} else {
-		/* If the biginfo shows the stream is encrypted, then wait until broadcast code is
-		 * received then start to sync. If headset is out of sync but still looking for same
-		 * broadcaster, then the same broadcast code can be used.
-		 */
-		if (!broadcast_code_received && biginfo->encryption == true &&
-		    sink->broadcast_id != prev_broadcast_id) {
-			LOG_WRN("Stream is encrypted, but haven not received broadcast code");
+	if (biginfo->encryption) {
+		if (!broadcast_code_received) {
+			LOG_WRN("Encrypted stream: waiting for broadcast code (button press)");
 			return;
 		}
-
-		broadcast_code_received = false;
+	
+		memcpy(bis_encryption_key,
+			   CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
+			   MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
+				   ARRAY_SIZE(bis_encryption_key)));
+	} else {
+		memset(bis_encryption_key, 0, sizeof(bis_encryption_key));
 	}
+	
+	
+	
+	
+	// else {
+	// 	/* If the biginfo shows the stream is encrypted, then wait until broadcast code is
+	// 	 * received then start to sync. If headset is out of sync but still looking for same
+	// 	 * broadcaster, then the same broadcast code can be used.
+	// 	 */
+	// 	if (!broadcast_code_received && biginfo->encryption == true &&
+	// 	    sink->broadcast_id != prev_broadcast_id) {
+	// 		LOG_WRN("Stream is encrypted, but haven not received broadcast code");
+	// 		return;
+	// 	}
+
+	// 	broadcast_code_received = false;
+	// }
 
 	ret = bt_bap_broadcast_sink_sync(broadcast_sink, bis_index_bitfields[active_stream_index],
 					 audio_streams_p, bis_encryption_key);
