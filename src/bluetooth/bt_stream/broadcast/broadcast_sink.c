@@ -26,15 +26,13 @@
 LOG_MODULE_REGISTER(broadcast_sink, 4);
 
 
-// BUILD_ASSERT(CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT <= 4,
-// 	     "A maximum of two broadcast streams are currently supported");
 
 ZBUS_CHAN_DEFINE(le_audio_chan, struct le_audio_msg, NULL, NULL, ZBUS_OBSERVERS_EMPTY,
 		 ZBUS_MSG_INIT(0));
 
 static bool broadcast_code_received = false;
 static uint8_t bis_encryption_key[BT_ISO_BROADCAST_CODE_SIZE] = {0};
-static bool broadcast_code_received;
+
 struct audio_codec_info {
 	uint8_t id;
 	uint16_t cid;
@@ -58,6 +56,19 @@ static struct audio_codec_info audio_codec_info[CONFIG_BT_BAP_BROADCAST_SNK_STRE
 static uint32_t bis_index_bitfields[CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT];
 static struct bt_le_per_adv_sync *pa_sync_stored;
 static struct active_audio_stream active_stream;
+
+#define MAX_SUBGROUPS CONFIG_BT_BAP_BROADCAST_SNK_SUBGROUP_COUNT
+#define MAX_BISES_PER_SUBGROUP CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT
+
+struct parsed_subgroup {
+	uint8_t bis_indices[CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT];
+	uint8_t bis_count;
+	struct audio_codec_info codec_info;
+};
+
+static struct parsed_subgroup parsed_subgroups[MAX_SUBGROUPS];
+static uint8_t subgroup_total_count;
+static uint8_t current_subgroup_index;
 
 /* The values of sync_stream_cnt and active_stream_index must never become larger
  * than the sizes of the arrays above (audio_streams etc.)
@@ -89,6 +100,18 @@ static uint8_t bass_service_uuid[BT_UUID_SIZE_16];
 static uint8_t gap_appear_adv_data[BT_UUID_SIZE_16];
 static uint8_t csip_rsi_adv_data[BT_CSIP_RSI_SIZE];
 
+static bool store_bis_cb(const struct bt_bap_base_subgroup_bis *bis, void *user_data)
+{
+    struct parsed_subgroup *ps = (struct parsed_subgroup *)user_data;
+
+    if (ps->bis_count >= MAX_BISES_PER_SUBGROUP) {
+        return false; /* we already have max BISes; stop iterating */
+    }
+
+    ps->bis_indices[ps->bis_count++] = bis->index;
+    return true; /* continue if there are more BISes */
+}
+
 #define CSIP_SET_SIZE 2
 enum csip_set_rank {
 	CSIP_HL_RANK = 1,
@@ -119,6 +142,7 @@ struct bt_csip_set_member_register_param csip_param = {
 	.lockable = true,
 	.cb = &csip_callbacks,
 };
+
 
 int broadcast_sink_uuid_populate(struct net_buf_simple *uuid_buf)
 {
@@ -354,152 +378,139 @@ static struct bt_bap_stream_ops stream_ops = {
 	.recv = stream_recv_cb,
 };
 
-static bool base_subgroup_bis_cb(const struct bt_bap_base_subgroup_bis *bis, void *user_data)
-{
-	int ret;
-	struct bt_audio_codec_cfg codec_cfg = {0};
-
-	LOG_DBG("BIS found, index %d", bis->index);
-
-	ret = bt_bap_base_subgroup_bis_codec_to_codec_cfg(bis, &codec_cfg);
-	if (ret != 0) {
-		LOG_WRN("Could not find codec configuration for BIS index %d, ret "
-			"= %d",
-			bis->index, ret);
-		return true;
-	}
-
-	get_codec_info(&codec_cfg, &audio_codec_info[bis->index - 1]);
-
-	LOG_DBG("Channel allocation: 0x%x for BIS index %d",
-		audio_codec_info[bis->index - 1].chan_allocation, bis->index);
-
-	uint32_t chan_bitfield = audio_codec_info[bis->index - 1].chan_allocation;
-	bool single_bit = (chan_bitfield & (chan_bitfield - 1)) == 0;
-
-	if (single_bit) {
-		bis_index_bitfields[bis->index - 1] = BIT(bis->index - 1);
-	} else {
-		LOG_WRN("More than one bit set in channel location, we only support 1 channel per "
-			"BIS");
-	}
-
-	return true;
-}
 
 static bool base_subgroup_cb(const struct bt_bap_base_subgroup *subgroup, void *user_data)
 {
-	int ret;
-	int bis_num;
-	struct bt_audio_codec_cfg codec_cfg = {0};
-	struct bt_bap_base_codec_id codec_id;
-	bool *suitable_stream_found = user_data;
+    int ret;
+    struct bt_audio_codec_cfg     codec_cfg = {0};
+    struct bt_bap_base_codec_id   codec_id;
 
-	ret = bt_bap_base_subgroup_codec_to_codec_cfg(subgroup, &codec_cfg);
-	if (ret) {
-		LOG_WRN("Failed to convert codec to codec_cfg: %d", ret);
-		return true;
-	}
+    /* If we’ve already reached our maximum supported subgroups, skip storing */
+    if (subgroup_total_count >= MAX_SUBGROUPS) {
+        LOG_WRN("Too many subgroups; skipping further storage (max=%d)", MAX_SUBGROUPS);
+        return true; /* Continue iterating, but do nothing more for this subgroup */
+    }
 
-	ret = bt_bap_base_get_subgroup_codec_id(subgroup, &codec_id);
-	if (ret && codec_id.cid != BT_HCI_CODING_FORMAT_LC3) {
-		LOG_WRN("Failed to get codec ID or codec ID is not supported: %d", ret);
-		return true;
-	}
+    /* Convert subgroup‐level codec data into a codec_cfg object */
+    ret = bt_bap_base_subgroup_codec_to_codec_cfg(subgroup, &codec_cfg);
+    if (ret) {
+        LOG_WRN("Failed to convert codec for subgroup %d: %d", subgroup_total_count, ret);
+        return true; /* skip this subgroup */
+    }
 
-	ret = le_audio_bitrate_check(&codec_cfg);
-	if (!ret) {
-		LOG_WRN("Bitrate check failed");
-		return true;
-	}
+    // /* Verify it’s LC3 (CID == BT_HCI_CODING_FORMAT_LC3) */
+    // ret = bt_bap_base_get_subgroup_codec_id(subgroup, &codec_id);
+    // if (ret || codec_id.cid != BT_HCI_CODING_FORMAT_LC3) {
+    //     LOG_WRN("Unsupported codec or failed get_subgroup_codec_id: %d", ret);
+    //     return true;
+    // }
 
-	ret = le_audio_freq_check(&codec_cfg);
-	if (!ret) {
-		LOG_WRN("Sample rate not supported");
-		return true;
-	}
+    /* Store “subgroup‐level” codec info in parsed_subgroups[] */
+    struct parsed_subgroup *ps = &parsed_subgroups[subgroup_total_count];
+    memset(ps, 0, sizeof(*ps));
+    get_codec_info(&codec_cfg, &ps->codec_info);
 
-	bis_num = bt_bap_base_get_subgroup_bis_count(subgroup);
-	LOG_DBG("Subgroup %p has %d BISes", (void *)subgroup, bis_num);
-	if (bis_num > 0) {
-		*suitable_stream_found = true;
-		sync_stream_cnt = bis_num;
-		for (int i = 0; i < bis_num; i++) {
-			get_codec_info(&codec_cfg, &audio_codec_info[i]);
-		}
+    /* Walk through each BIS in this subgroup, storing its index via store_bis_cb() */
+    ret = bt_bap_base_subgroup_foreach_bis(subgroup, store_bis_cb, ps);
+    if (ret < 0) {
+        LOG_WRN("Could not parse BISes for subgroup %d: %d", subgroup_total_count, ret);
+    }
 
-		ret = bt_bap_base_subgroup_foreach_bis(subgroup, base_subgroup_bis_cb, NULL);
-		if (ret < 0) {
-			LOG_WRN("Could not get BIS for subgroup %p: %d", (void *)subgroup, ret);
-		}
-		return false;
-	}
-
-	return true;
+    LOG_INF("Stored subgroup %d (BIS count = %d)", subgroup_total_count, ps->bis_count);
+    subgroup_total_count++;
+    return true;
 }
 
-static void base_recv_cb(struct bt_bap_broadcast_sink *sink, const struct bt_bap_base *base,
-			 size_t base_size)
+
+
+static void base_recv_cb(struct bt_bap_broadcast_sink *sink,
+                         const struct bt_bap_base *base,
+                         size_t base_size)
 {
-	int ret;
-	bool suitable_stream_found = false;
+    int ret;
+    bool suitable_stream_found = false;
 
-	if (init_routine_completed) {
-		return;
-	}
+    if (init_routine_completed) {
+        return;
+    }
 
-	sync_stream_cnt = 0;
+    /* Reset parsed‐subgroup storage */
+    subgroup_total_count   = 0;
+    current_subgroup_index = 0;
 
-	uint32_t subgroup_count = bt_bap_base_get_subgroup_count(base);
+    /* Parse all subgroups (calls base_subgroup_cb for each one) */
+    ret = bt_bap_base_foreach_subgroup(base, base_subgroup_cb, &suitable_stream_found);
+    if (ret != 0 && ret != -ECANCELED) {
+        LOG_WRN("Failed to parse subgroups: %d", ret);
+        return;
+    }
 
-	LOG_DBG("Received BASE with %d subgroup(s) from broadcast sink", subgroup_count);
+    /* If no subgroups found, abort */
+    if (subgroup_total_count == 0) {
+        LOG_DBG("Found no subgroups in BASE");
+        le_audio_event_publish(LE_AUDIO_EVT_NO_VALID_CFG);
+        return;
+    }
 
-	ret = bt_bap_base_foreach_subgroup(base, base_subgroup_cb, &suitable_stream_found);
-	if (ret != 0 && ret != -ECANCELED) {
-		LOG_WRN("Failed to parse subgroups: %d", ret);
-		return;
-	}
+    /* We have ≥1 subgroup. Use subgroup 0 as our initial active set:
+     *   - fill in sync_stream_cnt
+     *   - pick first BIS index of subgroup 0
+     *   - build bis_index_bitfields[] from subgroup‐0.bis_indices[]
+     *   - copy subgroup‐0.codec_info → audio_codec_info[z]
+     */
+    struct parsed_subgroup *ps0 = &parsed_subgroups[0];
 
-	if (suitable_stream_found) {
-		/* Set the initial active stream based on the defined channel of the device */
-		enum audio_channel audio_channel_temp;
+    if (ps0->bis_count == 0) {
+        LOG_DBG("Subgroup 0 has no BIS—no valid streams");
+        le_audio_event_publish(LE_AUDIO_EVT_NO_VALID_CFG);
+        return;
+    }
 
-		channel_assignment_get(&audio_channel_temp);
-		if (audio_channel_temp > AUDIO_CH_NUM) {
-			LOG_ERR("Invalid channel assignment");
-			return;
-		}
+    /* 1. How many BIS in subgroup 0? */
+    sync_stream_cnt = ps0->bis_count;
 
-		active_stream_index = (uint8_t)audio_channel_temp;
+    /* 2. Clear out any old BIS bitfields & audio_codec_info */
+    memset(bis_index_bitfields, 0, sizeof(bis_index_bitfields));
+    // (We will also overwrite audio_codec_info only for the slots we actually need,
+    //  so no need to memset(audio_codec_info).)
 
-		/** If the stream matching channel is not present, revert back to first BIS, e.g.
-		 *  mono stream but channel assignment is RIGHT
-		 */
-		if ((active_stream_index + 1) > sync_stream_cnt) {
-			LOG_WRN("BIS index: %d not found, reverting to first BIS",
-				(active_stream_index + 1));
-			active_stream_index = 0;
-		}
+    /* 3. Rebuild bitfields + copy codec_info for each BIS index in subgroup 0 */
+    for (int i = 0; i < ps0->bis_count; i++) {
+        uint8_t one_based = ps0->bis_indices[i];
+        int z = one_based - 1; /* zero‐based array index */
 
-		active_stream.stream = &audio_streams[active_stream_index];
-		active_stream.codec = &audio_codec_info[active_stream_index];
-		ret = bt_bap_base_get_pres_delay(base);
-		if (ret == -EINVAL) {
-			LOG_WRN("Failed to get pres_delay: %d", ret);
-			active_stream.pd = 0;
-		} else {
-			active_stream.pd = ret;
-		}
-		le_audio_event_publish(LE_AUDIO_EVT_CONFIG_RECEIVED);
+        /* Mark that BIS in our bitfield */
+        bis_index_bitfields[z] = (1u << z);
 
-		LOG_DBG("Channel %s active",
-			((active_stream_index == AUDIO_CH_L) ? CH_L_TAG : CH_R_TAG));
-		LOG_DBG("Waiting for syncable");
-	} else {
-		LOG_DBG("Found no suitable stream");
-		le_audio_event_publish(LE_AUDIO_EVT_NO_VALID_CFG);
-	}
+        /* Copy codec parameters into audio_codec_info[z] */
+        audio_codec_info[z] = ps0->codec_info;
+    }
+
+    /* 4. Now pick the “first BIS” from subgroup 0 → active_stream_index */
+    active_stream_index = ps0->bis_indices[0] - 1;
+    if ((size_t)active_stream_index >= CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT) {
+        LOG_WRN("Initial BIS index %d out of range—clamping to 0", ps0->bis_indices[0]);
+        active_stream_index = 0;
+    }
+
+    /* 5. Point active_stream to that array slot */
+    active_stream.stream = &audio_streams[active_stream_index];
+    active_stream.codec  = &audio_codec_info[active_stream_index];
+
+    /* 6. Save this subgroup’s presentation delay (PD) */
+    ret = bt_bap_base_get_pres_delay(base);
+    if (ret < 0) {
+        LOG_WRN("Failed to get pres_delay: %d", ret);
+        active_stream.pd = 0;
+    } else {
+        active_stream.pd = ret;
+    }
+
+    le_audio_event_publish(LE_AUDIO_EVT_CONFIG_RECEIVED);
+    LOG_DBG("Initialized active_stream from subgroup 0, BIS index %d",
+            ps0->bis_indices[0]);
 }
+
 
 static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_biginfo *biginfo)
 {
@@ -533,31 +544,6 @@ static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_
 	/* NOTE: The string below is used by the Nordic CI system */
 	LOG_INF("Syncing to broadcast stream index %d", active_stream_index);
 
-	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
-	// 	if (!broadcast_code_received) {
-	// 		LOG_WRN("Encrypted: waiting for broadcast code (button press)");
-	// 		return;
-	// 	}
-
-	// 	memcpy(bis_encryption_key,
-	// 	       CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
-	// 	       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
-	// 	           ARRAY_SIZE(bis_encryption_key)));
-
-	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
-	// 	memcpy(bis_encryption_key, CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
-	// 	       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
-	// 		   ARRAY_SIZE(bis_encryption_key)));
-	// /* Check if the code is set, otherwise wait for button press */
-	// if (IS_ENABLED(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTED)) {
-	// 	if (broadcast_code_received) {
-	// 		memcpy(bis_encryption_key, CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY,
-	// 		       MIN(strlen(CONFIG_BT_AUDIO_BROADCAST_ENCRYPTION_KEY),
-	// 			   ARRAY_SIZE(bis_encryption_key)));
-	// 	} else {
-	// 		LOG_WRN("Waiting for broadcast code to be set");
-	// 		return;  // Wait until the code is received
-	// 	}
 	if (biginfo->encryption) {
 		if (!broadcast_code_received) {
 			LOG_WRN("Encrypted stream: waiting for broadcast code (button press)");
@@ -572,22 +558,6 @@ static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_
 		memset(bis_encryption_key, 0, sizeof(bis_encryption_key));
 	}
 	
-	
-	
-	
-	// else {
-	// 	/* If the biginfo shows the stream is encrypted, then wait until broadcast code is
-	// 	 * received then start to sync. If headset is out of sync but still looking for same
-	// 	 * broadcaster, then the same broadcast code can be used.
-	// 	 */
-	// 	if (!broadcast_code_received && biginfo->encryption == true &&
-	// 	    sink->broadcast_id != prev_broadcast_id) {
-	// 		LOG_WRN("Stream is encrypted, but haven not received broadcast code");
-	// 		return;
-	// 	}
-
-	// 	broadcast_code_received = false;
-	// }
 
 	ret = bt_bap_broadcast_sink_sync(broadcast_sink, bis_index_bitfields[active_stream_index],
 					 audio_streams_p, bis_encryption_key);
@@ -612,33 +582,107 @@ static struct bt_bap_broadcast_sink_cb broadcast_sink_cbs = {
 
 int broadcast_sink_change_active_audio_stream(void)
 {
-	int ret;
+    int ret;
 
-	if (broadcast_sink == NULL) {
-		LOG_WRN("No broadcast sink");
-		return -ECANCELED;
-	}
+    if (broadcast_sink == NULL) {
+        LOG_WRN("No broadcast sink");
+        return -ECANCELED;
+    }
 
-	if (active_stream.stream != NULL && active_stream.stream->ep != NULL) {
-		if (active_stream.stream->ep->status.state == BT_BAP_EP_STATE_STREAMING) {
-			ret = bt_bap_broadcast_sink_stop(broadcast_sink);
-			if (ret) {
-				LOG_ERR("Failed to stop sink");
-			}
-		}
-	}
+    /* Stop stream first if needed */
+    if (active_stream.stream &&
+        active_stream.stream->ep &&
+        active_stream.stream->ep->status.state == BT_BAP_EP_STATE_STREAMING) {
+        ret = bt_bap_broadcast_sink_stop(broadcast_sink);
+        if (ret) {
+            LOG_ERR("Failed to stop sink before BIS switch: %d", ret);
+            return ret;
+        }
+    }
 
-	/* Wrap streams */
-	if (++active_stream_index >= sync_stream_cnt) {
-		active_stream_index = 0;
-	}
+    /* Cycle within subgroup */
+    if (++active_stream_index >= sync_stream_cnt) {
+        active_stream_index = 0;
+    }
 
-	active_stream.stream = &audio_streams[active_stream_index];
-	active_stream.codec = &audio_codec_info[active_stream_index];
+    active_stream.stream = &audio_streams[active_stream_index];
+    active_stream.codec  = &audio_codec_info[active_stream_index];
 
-	LOG_INF("Changed to stream %d", active_stream_index);
+    uint32_t bis_mask = bis_index_bitfields[active_stream_index];
+    struct bt_bap_stream *streams[] = { &audio_streams[active_stream_index] };
 
-	return 0;
+    ret = bt_bap_broadcast_sink_sync(broadcast_sink, bis_mask, streams, bis_encryption_key);
+    if (ret) {
+        LOG_ERR("Failed to sync to new BIS: %d", ret);
+        return ret;
+    }
+
+    LOG_INF("Changed to BIS stream %d", active_stream_index);
+    return 0;
+}
+
+int broadcast_sink_change_subgroup(void)
+{
+    int ret;
+
+    if (broadcast_sink == NULL) {
+        LOG_WRN("No broadcast sink");
+        return -ECANCELED;
+    }
+    if (subgroup_total_count < 2) {
+        LOG_WRN("Only %d subgroup(s) available, cannot switch", subgroup_total_count);
+        return -EINVAL;
+    }
+
+    if (active_stream.stream &&
+        active_stream.stream->ep &&
+        active_stream.stream->ep->status.state == BT_BAP_EP_STATE_STREAMING) {
+        ret = bt_bap_broadcast_sink_stop(broadcast_sink);
+        if (ret) {
+            LOG_ERR("Failed to stop BIS before subgroup switch: %d", ret);
+            return ret;
+        }
+    }
+
+    current_subgroup_index = (current_subgroup_index + 1) % subgroup_total_count;
+    const struct parsed_subgroup *ps = &parsed_subgroups[current_subgroup_index];
+
+    if (ps->bis_count == 0) {
+        LOG_WRN("Selected subgroup %d has no BIS—cannot switch", current_subgroup_index);
+        return -EINVAL;
+    }
+
+    /* Rebuild BIS bitfields */
+    memset(bis_index_bitfields, 0, sizeof(bis_index_bitfields));
+    for (int i = 0; i < ps->bis_count; i++) {
+        int z = ps->bis_indices[i] - 1;
+        bis_index_bitfields[z] = (1u << z);
+        audio_codec_info[z] = ps->codec_info;
+    }
+
+    /* Set active stream to first BIS of new subgroup */
+    sync_stream_cnt     = ps->bis_count;
+    active_stream_index = ps->bis_indices[0] - 1;
+
+    active_stream.stream = &audio_streams[active_stream_index];
+    active_stream.codec  = &audio_codec_info[active_stream_index];
+
+    /* Re-sync to broadcast source with new BIS bitfield */
+    struct bt_bap_stream *audio_streams_p[] = { &audio_streams[active_stream_index] };
+
+    ret = bt_bap_broadcast_sink_sync(broadcast_sink, bis_index_bitfields[active_stream_index],
+                                     audio_streams_p, bis_encryption_key);
+    if (ret) {
+        LOG_ERR("Failed to re-sync to new subgroup: %d", ret);
+        return ret;
+    }
+
+    LOG_INF("Switched to subgroup %d (first BIS %d → stream %d)",
+            current_subgroup_index,
+            ps->bis_indices[0],
+            active_stream_index);
+
+    return 0;
 }
 
 int broadcast_sink_config_get(uint32_t *bitrate, uint32_t *sampling_rate, uint32_t *pres_delay)

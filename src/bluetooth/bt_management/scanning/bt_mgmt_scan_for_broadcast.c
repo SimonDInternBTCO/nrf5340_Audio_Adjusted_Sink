@@ -22,7 +22,7 @@
 #include <zephyr/logging/log.h>
 
 //LOG_MODULE_DECLARE(bt_mgmt_scan);
-LOG_MODULE_REGISTER(bt_mgmt_scan_for_broadcast, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(bt_mgmt_scan_for_broadcast, 4);
 
 /* Any value above 0xFFFFFF is invalid, so one can use 0xFFFFFFFF to denote
  * an invalid broadcast ID.
@@ -143,6 +143,8 @@ static bool scan_check_broadcast_source(struct bt_data *data, void *user_data)
 	struct broadcast_source *source = (struct broadcast_source *)user_data;
 	struct bt_uuid_16 adv_uuid;
 
+	LOG_INF("AD type: 0x%02X, length: %d", data->type, data->data_len);
+
 	if (data->type == BT_DATA_BROADCAST_NAME && data->data_len) {
 		/* Ensure that broadcast name is at least one character shorter than the value of
 		 * BLE_SEARCH_NAME_MAX_LEN
@@ -150,12 +152,16 @@ static bool scan_check_broadcast_source(struct bt_data *data, void *user_data)
 		if (data->data_len < BLE_SEARCH_NAME_MAX_LEN) {
 			memcpy(source->name, data->data, data->data_len);
 			source->name[data->data_len] = '\0';
+
+			// Log the broadcast name
+            LOG_INF("Parsed broadcast name: %s", source->name);
 		}
 
 		return true;
 	}
 
 	if (data->type != BT_DATA_SVC_DATA16) {
+		        LOG_INF("Unexpected data type: 0x%02X, skipping", data->type);
 		return true;
 	}
 
@@ -163,15 +169,21 @@ static bool scan_check_broadcast_source(struct bt_data *data, void *user_data)
 		return true;
 	}
 
+	LOG_INF("Raw service data: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+		data->data[0], data->data[1], data->data[2], data->data[3], data->data[4], data->data[5], data->data[6], data->data[7], data->data[8], data->data[9]);
+
 	if (!bt_uuid_create(&adv_uuid.uuid, data->data, BT_UUID_SIZE_16)) {
+		LOG_WRN("Failed to parse UUID from service data");
 		return false;
 	}
 
 	if (bt_uuid_cmp(&adv_uuid.uuid, BT_UUID_BROADCAST_AUDIO)) {
+		        LOG_INF("UUID does not match Broadcast Audio UUID");
 		return true;
 	}
 
 	source->id = sys_get_le24(data->data + BT_UUID_SIZE_16);
+	LOG_INF("Parsed broadcast ID: 0x%06x", source->id);
 
 	return true;
 }
@@ -206,7 +218,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 			return;
 		}
 
-		LOG_DBG("Broadcast source %s found, id: 0x%06x", source.name, source.id);
+		LOG_INF("Broadcast source %s found, id: 0x%06x", source.name, source.id);
 		periodic_adv_sync(info, source);
 	}
 }
@@ -301,7 +313,7 @@ static int pa_sync_past(struct bt_conn *conn, uint16_t pa_interval)
 		return ret;
 	}
 
-	LOG_DBG("Syncing with PAST: %d", ret);
+	LOG_INF("Syncing with PAST: %d", ret);
 
 	/* param.timeout is scaled in 10ms, so we need to *10 when we put it into K_MSEC() */
 	(void)k_work_reschedule(&pa_timer, K_MSEC(param.timeout * 10));

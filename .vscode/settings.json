@@ -19,6 +19,8 @@
         "pcm_stream_channel_modifier.h": "c",
         "sample_rate_converter.h": "c",
         "sw_codec_select.h": "c",
-        "sw_codec_lc3.h": "c"
+        "sw_codec_lc3.h": "c",
+        "zbus_common.h": "c",
+        "audio.h": "c"
     }
 }

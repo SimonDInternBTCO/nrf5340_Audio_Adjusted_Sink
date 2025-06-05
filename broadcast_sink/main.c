@@ -77,7 +77,17 @@ static void button_msg_sub_thread(void)
 {
 	int ret;
 	const struct zbus_channel *chan;
-	bool broadcast_alt = true;
+	//bool broadcast_alt = true;
+	static uint8_t broadcast_index = 0;
+
+	#define BROADCAST_NAME_COUNT 4
+	static const char *broadcast_names[BROADCAST_NAME_COUNT] = {
+		"Auracast_1",
+		"Auracast_2",
+		"Auracast_3",
+		"Auracast_4"
+	};
+
 
 	while (1) {
 		ret = zbus_sub_wait(&button_evt_sub, &chan, K_FOREVER);
@@ -134,22 +144,6 @@ static void button_msg_sub_thread(void)
 			}
 			break;	
 
-		// case BUTTON_PLAY_PAUSE:
-		// 	if (strm_state == STATE_STREAMING) {
-		// 		ret = broadcast_sink_stop();
-		// 		if (ret) {
-		// 			LOG_WRN("Failed to stop broadcast sink: %d", ret);
-		// 		}
-		// 	} else if (strm_state == STATE_PAUSED) {
-		// 		ret = broadcast_sink_start();
-		// 		if (ret) {
-		// 			LOG_WRN("Failed to start broadcast sink: %d", ret);
-		// 		}
-		// 	} else {
-		// 		LOG_WRN("In invalid state: %d", strm_state);
-		// 	}
-		// 	break;
-
 		case BUTTON_VOLUME_UP:
 			ret = bt_r_and_c_volume_up();
 			if (ret) {
@@ -159,12 +153,13 @@ static void button_msg_sub_thread(void)
 			break;
 
 		case BUTTON_VOLUME_DOWN:
-			ret = bt_r_and_c_volume_down();
-			if (ret) {
-				LOG_WRN("Failed to decrease volume: %d", ret);
-			}
-
-			break;
+	     ret = broadcast_sink_change_subgroup();
+	     if (ret) {
+		  LOG_WRN("Failed to change subgroup: %d", ret);
+	     } else {
+		  LOG_INF("Subgroup switched successfully");
+	     }
+	     break;
 
 		case BUTTON_4:
 			ret = broadcast_sink_change_active_audio_stream();
@@ -190,19 +185,14 @@ static void button_msg_sub_thread(void)
 				break;
 			}
 
-			if (broadcast_alt) {
-				ret = bt_mgmt_scan_start(0, 0, BT_MGMT_SCAN_TYPE_BROADCAST,
-							 CONFIG_BT_AUDIO_BROADCAST_NAME_ALT,
-							 BRDCAST_ID_NOT_USED);
-				broadcast_alt = false;
-			} else {
-				ret = bt_mgmt_scan_start(0, 0, BT_MGMT_SCAN_TYPE_BROADCAST,
-							 CONFIG_BT_AUDIO_BROADCAST_NAME,
-							 BRDCAST_ID_NOT_USED);
-				broadcast_alt = true;
-			}
+			broadcast_index = (broadcast_index + 1) % BROADCAST_NAME_COUNT;
 
-			if (ret) {
+            ret = bt_mgmt_scan_start(0, 0, BT_MGMT_SCAN_TYPE_BROADCAST,
+                         broadcast_names[broadcast_index],
+                         BRDCAST_ID_NOT_USED);
+			LOG_INF("searching for %d", BROADCAST_NAME_COUNT);			 
+
+		    if (ret) {
 				LOG_WRN("Failed to start scanning for broadcaster: %d", ret);
 			}
 
